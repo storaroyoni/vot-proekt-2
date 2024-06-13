@@ -17,8 +17,20 @@ services:
     ports:
       - "5000:80"
     depends_on:
-      - db
+      - proxysql
       - keycloak
+
+  proxysql:
+    image: percona/proxysql:2.4.16
+    ports:
+      - "6033:6033"
+      - "6032:6032"
+    volumes:
+      - ./proxysql.cnf:/etc/proxysql.cnf
+    depends_on:
+      - galera1
+      - galera2
+      - galera3
 
   keycloak:
     image: quay.io/keycloak/keycloak:15.0.2
@@ -26,26 +38,62 @@ services:
       KEYCLOAK_USER: admin
       KEYCLOAK_PASSWORD: admin
       DB_VENDOR: mariadb
-      DB_ADDR: db
+      DB_ADDR: proxysql
       DB_DATABASE: keycloak
       DB_USER: keycloak
       DB_PASSWORD: password
     ports:
       - "8080:8080"
     depends_on:
-      - db
+      - proxysql
 
-  db:
-    build: ./db
+  galera1:
+    image: mariadb:10.5
+    command: >
+      --wsrep-new-cluster
+      --wsrep-cluster-name=galera_cluster
+      --wsrep-node-name=galera1
+      --wsrep-node-address=galera1
+      --wsrep-sst-method=rsync
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: mydb
       MYSQL_USER: user
       MYSQL_PASSWORD: password
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+      GALERA_CLUSTER_ADDRESS: "gcomm://galera1,galera2,galera3"
     ports:
       - "3306:3306"
     volumes:
-      - db-data:/var/lib/mysql
+      - galera1-data:/var/lib/mysql
+
+  galera2:
+    image: mariadb:10.5
+    command: >
+      --wsrep-cluster-address=gcomm://galera1,galera2,galera3
+      --wsrep-node-name=galera2
+      --wsrep-node-address=galera2
+      --wsrep-sst-method=rsync
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+    volumes:
+      - galera2-data:/var/lib/mysql
+
+  galera3:
+    image: mariadb:10.5
+    command: >
+      --wsrep-cluster-address=gcomm://galera1,galera2,galera3
+      --wsrep-node-name=galera3
+      --wsrep-node-address=galera3
+      --wsrep-sst-method=rsync
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+    volumes:
+      - galera3-data:/var/lib/mysql
 
 volumes:
-  db-data:
+  galera1-data:
+  galera2-data:
+  galera3-data:
